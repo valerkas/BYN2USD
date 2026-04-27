@@ -1,0 +1,84 @@
+const NBRB_USD_RATE_URLS = [
+  "https://www.nbrb.by/api/exrates/rates/USD?parammode=2",
+  "https://www.nbrb.by/api/exrates/rates/431?parammode=2",
+  "https://www.nbrb.by/api/exrates/rates/431"
+];
+const RATE_STORAGE_KEY = "usdRate";
+const RATE_UPDATED_AT_KEY = "usdRateUpdatedAt";
+const RATE_TTL_MS = 6 * 60 * 60 * 1000;
+
+async function getStoredRate() {
+  const data = await chrome.storage.local.get([RATE_STORAGE_KEY, RATE_UPDATED_AT_KEY]);
+  return {
+    rate: data[RATE_STORAGE_KEY] ?? null,
+    updatedAt: data[RATE_UPDATED_AT_KEY] ?? 0
+  };
+}
+
+async function saveRate(rate) {
+  await chrome.storage.local.set({
+    [RATE_STORAGE_KEY]: rate,
+    [RATE_UPDATED_AT_KEY]: Date.now()
+  });
+}
+
+async function fetchRateFromNbrb() {
+  let lastStatus = "unknown";
+
+  for (const url of NBRB_USD_RATE_URLS) {
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      lastStatus = String(response.status);
+      continue;
+    }
+
+    const payload = await response.json();
+    const rate = Number(payload?.Cur_OfficialRate);
+    if (Number.isFinite(rate) && rate > 0) {
+      return rate;
+    }
+  }
+
+  throw new Error(`NBRB request failed: ${lastStatus}`);
+}
+
+async function getRate(forceRefresh = false) {
+  const { rate, updatedAt } = await getStoredRate();
+  const isFresh = rate && Date.now() - updatedAt < RATE_TTL_MS;
+
+  if (!forceRefresh && isFresh) {
+    return rate;
+  }
+
+  const freshRate = await fetchRateFromNbrb();
+  await saveRate(freshRate);
+  return freshRate;
+}
+
+chrome.runtime.onInstalled.addListener(async () => {
+  try {
+    await getRate(true);
+  } catch (error) {
+    console.error("Failed to preload USD rate on install", error);
+  }
+});
+
+chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type !== "GET_USD_RATE") {
+    return false;
+  }
+
+  const forceRefresh = Boolean(message.forceRefresh);
+  getRate(forceRefresh)
+    .then((rate) => {
+      sendResponse({ ok: true, rate });
+    })
+    .catch((error) => {
+      sendResponse({
+        ok: false,
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    });
+
+  return true;
+});
