@@ -5,7 +5,6 @@ const NBRB_USD_RATE_URLS = [
 ];
 const RATE_STORAGE_KEY = "usdRate";
 const RATE_UPDATED_AT_KEY = "usdRateUpdatedAt";
-const DAILY_RATE_ALARM_NAME = "dailyUsdRateRefresh";
 const MINSK_UTC_OFFSET_MS = 3 * 60 * 60 * 1000;
 
 async function getStoredRate() {
@@ -44,8 +43,10 @@ async function fetchRateFromNbrb() {
 }
 
 async function getRate(forceRefresh = false) {
-  const { rate } = await getStoredRate();
-  if (!forceRefresh && rate) {
+  const { rate, updatedAt } = await getStoredRate();
+  const shouldRefresh = forceRefresh || shouldRefreshAtMinskNoon(updatedAt);
+
+  if (rate && !shouldRefresh) {
     return rate;
   }
 
@@ -54,59 +55,47 @@ async function getRate(forceRefresh = false) {
   return freshRate;
 }
 
-function getNextMinskNoonTimestamp(nowTs = Date.now()) {
+function getMinskNoonTimestamp(nowTs = Date.now()) {
   const nowInMinskTs = nowTs + MINSK_UTC_OFFSET_MS;
-  const nextNoonInMinsk = new Date(nowInMinskTs);
-  nextNoonInMinsk.setUTCHours(12, 0, 0, 0);
-
-  if (nextNoonInMinsk.getTime() <= nowInMinskTs) {
-    nextNoonInMinsk.setUTCDate(nextNoonInMinsk.getUTCDate() + 1);
-  }
-
-  return nextNoonInMinsk.getTime() - MINSK_UTC_OFFSET_MS;
+  const minskDate = new Date(nowInMinskTs);
+  minskDate.setUTCHours(12, 0, 0, 0);
+  return minskDate.getTime() - MINSK_UTC_OFFSET_MS;
 }
 
-async function scheduleDailyRefreshAlarm() {
-  const when = getNextMinskNoonTimestamp();
-  await chrome.alarms.create(DAILY_RATE_ALARM_NAME, {
-    when,
-    periodInMinutes: 24 * 60
-  });
+function isSameMinskDay(leftTs, rightTs) {
+  const leftDate = new Date(leftTs + MINSK_UTC_OFFSET_MS);
+  const rightDate = new Date(rightTs + MINSK_UTC_OFFSET_MS);
+  return (
+    leftDate.getUTCFullYear() === rightDate.getUTCFullYear() &&
+    leftDate.getUTCMonth() === rightDate.getUTCMonth() &&
+    leftDate.getUTCDate() === rightDate.getUTCDate()
+  );
 }
 
-async function initializeRateRefresh() {
-  await scheduleDailyRefreshAlarm();
-  const { rate } = await getStoredRate();
-
-  if (!rate) {
-    await getRate(true);
+function shouldRefreshAtMinskNoon(updatedAt, nowTs = Date.now()) {
+  if (!updatedAt) {
+    return true;
   }
+
+  const minskNoonTs = getMinskNoonTimestamp(nowTs);
+  const isAfterMinskNoon = nowTs >= minskNoonTs;
+  if (!isAfterMinskNoon) {
+    return false;
+  }
+
+  if (!isSameMinskDay(updatedAt, nowTs)) {
+    return true;
+  }
+
+  return updatedAt < minskNoonTs;
 }
 
 chrome.runtime.onInstalled.addListener(async () => {
   try {
-    await initializeRateRefresh();
+    await getRate(true);
   } catch (error) {
-    console.error("Failed to initialize USD rate refresh", error);
+    console.error("Failed to preload USD rate on install", error);
   }
-});
-
-chrome.runtime.onStartup.addListener(async () => {
-  try {
-    await scheduleDailyRefreshAlarm();
-  } catch (error) {
-    console.error("Failed to reschedule daily USD rate refresh", error);
-  }
-});
-
-chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm?.name !== DAILY_RATE_ALARM_NAME) {
-    return;
-  }
-
-  getRate(true).catch((error) => {
-    console.error("Failed to refresh USD rate by daily alarm", error);
-  });
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

@@ -4,8 +4,7 @@
   "version": "1.0.1",
   "description": "Показывает эквивалент цен в USD по курсу НБРБ рядом с ценами в BYN.",
   "permissions": [
-    "storage",
-    "alarms"
+    "storage"
   ],
   "host_permissions": [
     "https://www.nbrb.by/*",
