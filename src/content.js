@@ -122,10 +122,15 @@ function processTextNode(node, usdRate) {
 
 function walkAndConvert(root, usdRate) {
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes = [];
   let current = walker.nextNode();
   while (current) {
-    processTextNode(current, usdRate);
+    textNodes.push(current);
     current = walker.nextNode();
+  }
+
+  for (const node of textNodes) {
+    processTextNode(node, usdRate);
   }
 }
 
