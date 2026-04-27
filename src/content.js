@@ -87,6 +87,14 @@ function shouldConvertImplicitAmount(text, start, end, byn) {
   return true;
 }
 
+function startsWithCurrencyToken(text) {
+  if (!text) {
+    return false;
+  }
+
+  return /^(\s|[\(\[\{])*(р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/i.test(text);
+}
+
 function buildConvertedFragment(text, usdRate, allowImplicitPrice) {
   const fragment = document.createDocumentFragment();
   let lastIndex = 0;
@@ -165,6 +173,18 @@ function processTextNode(node, usdRate) {
 
   const parentLooksLikePrice = isPriceLikeContext(parent);
   const containsCurrencyToken = CURRENCY_TOKEN_REGEX.test(sourceText);
+  const nextSiblingText =
+    node.nextSibling && node.nextSibling.nodeType === Node.TEXT_NODE
+      ? node.nextSibling.textContent
+      : "";
+  const hasCurrencyInNextSibling = startsWithCurrencyToken(nextSiblingText);
+
+  // Avoid malformed output like "~$123 р." when amount and currency are split across text nodes.
+  if (!containsCurrencyToken && parentLooksLikePrice && hasCurrencyInNextSibling) {
+    processedNodes.add(node);
+    return;
+  }
+
   if (!containsCurrencyToken && !parentLooksLikePrice) {
     processedNodes.add(node);
     return;
