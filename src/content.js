@@ -46,7 +46,7 @@ function ensureUsdLineStyle() {
       display: block;
       margin-top: 2px;
       opacity: 0.9;
-      font-size: 0.95em;
+      font-size: 0.82em;
     }
   `;
   document.head.appendChild(style);
