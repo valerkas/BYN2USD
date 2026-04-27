@@ -16,6 +16,12 @@ function normalizeNumber(rawValue) {
   return Number.isFinite(value) ? value : null;
 }
 
+function formatUsd(usdValue) {
+  const [integerPart, fractionalPart] = usdValue.toFixed(2).split(".");
+  const groupedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, " ");
+  return `${groupedInteger}.${fractionalPart}`;
+}
+
 function requestUsdRate() {
   return new Promise((resolve, reject) => {
     chrome.runtime.sendMessage({ type: "GET_USD_RATE" }, (response) => {
@@ -115,7 +121,7 @@ function buildConvertedFragment(text, usdRate, allowImplicitPrice) {
       const usd = byn / usdRate;
       const usdLine = document.createElement("span");
       usdLine.className = USD_LINE_CLASS;
-      usdLine.textContent = `~$${usd.toFixed(2)}`;
+      usdLine.textContent = `~$${formatUsd(usd)}`;
       fragment.appendChild(usdLine);
       hasConversion = true;
     }
