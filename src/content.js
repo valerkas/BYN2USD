@@ -1,10 +1,17 @@
+const isAlreadyInitialized = Boolean(window.__BYN_USD_CONVERTER_INITIALIZED__);
+window.__BYN_USD_CONVERTER_INITIALIZED__ = true;
+
 const PRICE_REGEX =
-  /(\d{1,3}(?:[ \u00A0]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/gi;
+  /(\d{1,3}(?:[ \u00A0\u202F]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/gi;
+const IMPLICIT_PRICE_REGEX = /(\d{1,3}(?:[ \u00A0\u202F]\d{3})+(?:[.,]\d{1,2})?|\d{4,7}(?:[.,]\d{1,2})?)/g;
+const CURRENCY_TOKEN_REGEX = /(р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/i;
+const DATE_CONTEXT_REGEX =
+  /(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек|сегодня|вчера|дн|дней|нед|мес|год|г\.|date)/i;
 const USD_LINE_CLASS = "byn-usd-converted-line";
 const processedNodes = new WeakSet();
 
 function normalizeNumber(rawValue) {
-  const normalized = rawValue.replace(/[ \u00A0]/g, "").replace(",", ".");
+  const normalized = rawValue.replace(/[ \u00A0\u202F]/g, "").replace(",", ".");
   const value = Number.parseFloat(normalized);
   return Number.isFinite(value) ? value : null;
 }
@@ -45,12 +52,47 @@ function ensureUsdLineStyle() {
   document.head.appendChild(style);
 }
 
-function buildConvertedFragment(text, usdRate) {
+function isPriceLikeContext(element) {
+  if (!element) {
+    return false;
+  }
+
+  const signature = `${element.className ?? ""} ${element.id ?? ""}`.toLowerCase();
+  return /(price|cost|amount|sum|стоим|цен)/i.test(signature);
+}
+
+function shouldConvertImplicitAmount(text, start, end, byn) {
+  if (!Number.isFinite(byn) || byn < 100) {
+    return false;
+  }
+
+  // Common year values often appear in listing dates.
+  if (Number.isInteger(byn) && byn >= 1900 && byn <= 2100) {
+    return false;
+  }
+
+  const contextStart = Math.max(0, start - 24);
+  const contextEnd = Math.min(text.length, end + 24);
+  const nearText = text.slice(contextStart, contextEnd);
+  if (DATE_CONTEXT_REGEX.test(nearText)) {
+    return false;
+  }
+
+  return true;
+}
+
+function buildConvertedFragment(text, usdRate, allowImplicitPrice) {
   const fragment = document.createDocumentFragment();
   let lastIndex = 0;
-  PRICE_REGEX.lastIndex = 0;
+  const regex = CURRENCY_TOKEN_REGEX.test(text) ? PRICE_REGEX : allowImplicitPrice ? IMPLICIT_PRICE_REGEX : null;
+  if (!regex) {
+    return null;
+  }
+
+  regex.lastIndex = 0;
   let hasConversion = false;
-  let match = PRICE_REGEX.exec(text);
+  let match = regex.exec(text);
+  const useImplicitMatching = regex === IMPLICIT_PRICE_REGEX;
 
   while (match) {
     const [fullMatch, amountText] = match;
@@ -64,7 +106,12 @@ function buildConvertedFragment(text, usdRate) {
     fragment.appendChild(document.createTextNode(fullMatch));
 
     const byn = normalizeNumber(amountText);
-    if (byn && byn > 0) {
+    const canConvert =
+      byn &&
+      byn > 0 &&
+      (!useImplicitMatching || shouldConvertImplicitAmount(text, start, end, byn));
+
+    if (canConvert) {
       const usd = byn / usdRate;
       const usdLine = document.createElement("span");
       usdLine.className = USD_LINE_CLASS;
@@ -74,7 +121,7 @@ function buildConvertedFragment(text, usdRate) {
     }
 
     lastIndex = end;
-    match = PRICE_REGEX.exec(text);
+    match = regex.exec(text);
   }
 
   if (lastIndex < text.length) {
@@ -110,7 +157,14 @@ function processTextNode(node, usdRate) {
     return;
   }
 
-  const convertedFragment = buildConvertedFragment(sourceText, usdRate);
+  const parentLooksLikePrice = isPriceLikeContext(parent);
+  const containsCurrencyToken = CURRENCY_TOKEN_REGEX.test(sourceText);
+  if (!containsCurrencyToken && !parentLooksLikePrice) {
+    processedNodes.add(node);
+    return;
+  }
+
+  const convertedFragment = buildConvertedFragment(sourceText, usdRate, parentLooksLikePrice);
   if (convertedFragment) {
     processedNodes.add(node);
     node.replaceWith(convertedFragment);
@@ -164,10 +218,12 @@ async function init() {
   }
 }
 
-if (document.readyState === "loading") {
-  document.addEventListener("DOMContentLoaded", () => {
+if (!isAlreadyInitialized) {
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => {
+      void init();
+    });
+  } else {
     void init();
-  });
-} else {
-  void init();
+  }
 }

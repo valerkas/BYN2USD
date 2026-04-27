@@ -64,21 +64,21 @@ chrome.runtime.onInstalled.addListener(async () => {
 });
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "GET_USD_RATE") {
-    return false;
+  if (message?.type === "GET_USD_RATE") {
+    const forceRefresh = Boolean(message.forceRefresh);
+    getRate(forceRefresh)
+      .then((rate) => {
+        sendResponse({ ok: true, rate });
+      })
+      .catch((error) => {
+        sendResponse({
+          ok: false,
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      });
+
+    return true;
   }
 
-  const forceRefresh = Boolean(message.forceRefresh);
-  getRate(forceRefresh)
-    .then((rate) => {
-      sendResponse({ ok: true, rate });
-    })
-    .catch((error) => {
-      sendResponse({
-        ok: false,
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
-    });
-
-  return true;
+  return false;
 });

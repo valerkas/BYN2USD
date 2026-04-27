@@ -7,7 +7,9 @@
     "storage"
   ],
   "host_permissions": [
-    "https://www.nbrb.by/*"
+    "https://www.nbrb.by/*",
+    "https://av.by/*",
+    "https://*.av.by/*"
   ],
   "background": {
     "service_worker": "src/background.js"
@@ -15,8 +17,8 @@
   "content_scripts": [
     {
       "matches": [
-        "http://*/*",
-        "https://*/*"
+        "https://av.by/*",
+        "https://*.av.by/*"
       ],
       "js": [
         "src/content.js"
