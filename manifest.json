@@ -1,15 +1,16 @@
 {
   "manifest_version": 3,
-  "name": "BYN2USD (av.by)",
-  "version": "1.0.2",
-  "description": "Показывает эквивалент цен в USD по курсу НБРБ рядом с ценами в BYN.",
+  "name": "BYN2USD",
+  "version": "1.0.6",
+  "description": "Показывает эквивалент цен в USD по курсу НБРБ рядом с ценами в BYN на av.by и re.kufar.by.",
   "permissions": [
     "storage"
   ],
   "host_permissions": [
     "https://www.nbrb.by/*",
     "https://av.by/*",
-    "https://*.av.by/*"
+    "https://*.av.by/*",
+    "https://re.kufar.by/*"
   ],
   "background": {
     "service_worker": "src/background.js"
@@ -18,7 +19,8 @@
     {
       "matches": [
         "https://av.by/*",
-        "https://*.av.by/*"
+        "https://*.av.by/*",
+        "https://re.kufar.by/*"
       ],
       "js": [
         "src/content.js"
@@ -26,8 +28,18 @@
       "run_at": "document_idle"
     }
   ],
+  "icons": {
+    "16": "icons/icon-128.jpg",
+    "48": "icons/icon-128.jpg",
+    "128": "icons/icon-128.jpg"
+  },
   "action": {
     "default_popup": "src/popup.html",
-    "default_title": "BYN to USD"
+    "default_title": "BYN to USD",
+    "default_icon": {
+      "16": "icons/icon-128.jpg",
+      "48": "icons/icon-128.jpg",
+      "128": "icons/icon-128.jpg"
+    }
   }
 }

@@ -1,14 +1,19 @@
 const isAlreadyInitialized = Boolean(window.__BYN_USD_CONVERTER_INITIALIZED__);
 window.__BYN_USD_CONVERTER_INITIALIZED__ = true;
 
-const PRICE_REGEX =
-  /(\d{1,3}(?:[ \u00A0\u202F]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)\s*(?:р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/gi;
+const CURRENCY_TOKEN =
+  "р\\.?|руб(?:\\.|лей|ля|ль)?|byn|бел\\.?\\s*руб(?:\\.|лей|ля|ль)?";
+const PRICE_REGEX = new RegExp(
+  `(\\d{1,3}(?:[ \\u00A0\\u202F]\\d{3})*(?:[.,]\\d{1,2})?|\\d+(?:[.,]\\d{1,2})?)\\s*(?:${CURRENCY_TOKEN})`,
+  "gi"
+);
 const IMPLICIT_PRICE_REGEX = /(\d{1,3}(?:[ \u00A0\u202F]\d{3})+(?:[.,]\d{1,2})?|\d{4,7}(?:[.,]\d{1,2})?)/g;
-const CURRENCY_TOKEN_REGEX = /(р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/i;
+const CURRENCY_TOKEN_REGEX = new RegExp(`(${CURRENCY_TOKEN})`, "i");
 const DATE_CONTEXT_REGEX =
   /(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек|сегодня|вчера|дн|дней|нед|мес|год|г\.|date)/i;
 const USD_LINE_CLASS = "byn-usd-converted-line";
 const processedNodes = new WeakSet();
+const kufarConvertedGroups = new WeakSet();
 
 function normalizeNumber(rawValue) {
   const normalized = rawValue.replace(/[ \u00A0\u202F]/g, "").replace(",", ".");
@@ -47,6 +52,18 @@ function ensureUsdLineStyle() {
 
   const style = document.createElement("style");
   style.id = "byn-usd-converted-style";
+  const kufarInlinePrice = isKufarRealtySite()
+    ? `
+    [class*="styles_price__byr"] .${USD_LINE_CLASS},
+    [class*="styles_price__map"] .${USD_LINE_CLASS},
+    p[class*="styles_price__"] .${USD_LINE_CLASS} {
+      display: inline;
+      margin-left: 6px;
+      margin-top: 0;
+    }
+  `
+    : "";
+
   style.textContent = `
     .${USD_LINE_CLASS} {
       display: block;
@@ -54,13 +71,62 @@ function ensureUsdLineStyle() {
       opacity: 0.9;
       font-size: 0.82em;
     }
+    ${kufarInlinePrice}
   `;
   document.head.appendChild(style);
+}
+
+function isKufarRealtySite() {
+  return /(^|\.)re\.kufar\.by$/i.test(location.hostname);
+}
+
+function isKufarMainPriceContext(element) {
+  if (!element) {
+    return false;
+  }
+
+  if (element.closest('[class*="styles_price__meter"]')) {
+    return false;
+  }
+
+  if (element.closest('[class*="styles_price__byr"]')) {
+    return true;
+  }
+
+  const priceBlock = element.closest('[class*="styles_price__"]');
+  if (!priceBlock) {
+    return false;
+  }
+
+  const blockClass = String(priceBlock.className);
+  if (/styles_price__meter/i.test(blockClass)) {
+    return false;
+  }
+
+  if (/styles_price__map/i.test(blockClass)) {
+    return Boolean(element.closest('[class*="styles_price__byr"]'));
+  }
+
+  return priceBlock.matches('p[class*="styles_price__"]');
+}
+
+function getKufarConversionGroup(element) {
+  return (
+    element.closest('[data-testid*="realty-card"]') ||
+    element.closest('[class*="styles_price__map"]') ||
+    element.closest('[class*="styles_header__gFtKk"]') ||
+    element.closest('a[href*="/vi/"]') ||
+    element.closest('[class*="styles_wrapper__adview"]')
+  );
 }
 
 function isPriceLikeContext(element) {
   if (!element) {
     return false;
+  }
+
+  if (isKufarRealtySite()) {
+    return isKufarMainPriceContext(element);
   }
 
   const signature = `${element.className ?? ""} ${element.id ?? ""}`.toLowerCase();
@@ -92,10 +158,10 @@ function startsWithCurrencyToken(text) {
     return false;
   }
 
-  return /^(\s|[\(\[\{])*(р\.?|руб(?:\.|лей|ля|ль)?|byn|бел\.?\s*руб(?:\.|лей|ля|ль)?)/i.test(text);
+  return new RegExp(`^(\\s|[\\(\\[\\{])*(${CURRENCY_TOKEN})`, "i").test(text);
 }
 
-function buildConvertedFragment(text, usdRate, allowImplicitPrice) {
+function buildConvertedFragment(text, usdRate, allowImplicitPrice, convertOnlyFirst = false) {
   const fragment = document.createDocumentFragment();
   let lastIndex = 0;
   const regex = CURRENCY_TOKEN_REGEX.test(text) ? PRICE_REGEX : allowImplicitPrice ? IMPLICIT_PRICE_REGEX : null;
@@ -132,6 +198,11 @@ function buildConvertedFragment(text, usdRate, allowImplicitPrice) {
       usdLine.textContent = `~$${formatUsd(usd)}`;
       fragment.appendChild(usdLine);
       hasConversion = true;
+
+      if (convertOnlyFirst) {
+        lastIndex = end;
+        break;
+      }
     }
 
     lastIndex = end;
@@ -190,9 +261,24 @@ function processTextNode(node, usdRate) {
     return;
   }
 
-  const convertedFragment = buildConvertedFragment(sourceText, usdRate, parentLooksLikePrice);
+  const onKufar = isKufarRealtySite();
+  const kufarGroup = onKufar ? getKufarConversionGroup(parent) : null;
+  if (kufarGroup && kufarConvertedGroups.has(kufarGroup)) {
+    processedNodes.add(node);
+    return;
+  }
+
+  const convertedFragment = buildConvertedFragment(
+    sourceText,
+    usdRate,
+    onKufar ? false : parentLooksLikePrice,
+    onKufar
+  );
   if (convertedFragment) {
     processedNodes.add(node);
+    if (kufarGroup) {
+      kufarConvertedGroups.add(kufarGroup);
+    }
     node.replaceWith(convertedFragment);
     return;
   }
