@@ -256,7 +256,7 @@ function processTextNode(node, usdRate) {
     return;
   }
 
-  if (!containsCurrencyToken && !parentLooksLikePrice) {
+  if (!parentLooksLikePrice) {
     processedNodes.add(node);
     return;
   }
