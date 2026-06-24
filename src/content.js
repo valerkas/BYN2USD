@@ -12,8 +12,11 @@ const CURRENCY_TOKEN_REGEX = new RegExp(`(${CURRENCY_TOKEN})`, "i");
 const DATE_CONTEXT_REGEX =
   /(янв|фев|мар|апр|ма[йя]|июн|июл|авг|сен|окт|ноя|дек|сегодня|вчера|дн|дней|нед|мес|год|г\.|date)/i;
 const USD_LINE_CLASS = "byn-usd-converted-line";
+const AV_BY_PRICE_BLOCK_SELECTOR =
+  ".listing-item__price-primary, .listing-top__price-primary, [class*='__price-primary']";
 const processedNodes = new WeakSet();
 const kufarConvertedGroups = new WeakSet();
+const avByProcessedPriceBlocks = new WeakSet();
 
 function normalizeNumber(rawValue) {
   const normalized = rawValue.replace(/[ \u00A0\u202F]/g, "").replace(",", ".");
@@ -80,6 +83,60 @@ function isKufarRealtySite() {
   return /(^|\.)re\.kufar\.by$/i.test(location.hostname);
 }
 
+function isAvBySite() {
+  return /\.av\.by$/i.test(location.hostname);
+}
+
+function getAvByPriceBlock(element) {
+  return element?.closest(AV_BY_PRICE_BLOCK_SELECTOR) ?? null;
+}
+
+function markTextNodesProcessed(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  let current = walker.nextNode();
+  while (current) {
+    processedNodes.add(current);
+    current = walker.nextNode();
+  }
+}
+
+function processAvByPriceBlock(block, usdRate) {
+  if (!block || avByProcessedPriceBlocks.has(block)) {
+    return;
+  }
+
+  if (block.querySelector(`.${USD_LINE_CLASS}`)) {
+    avByProcessedPriceBlocks.add(block);
+    markTextNodesProcessed(block);
+    return;
+  }
+
+  const text = block.textContent.replace(/\s+/g, " ").trim();
+  if (!CURRENCY_TOKEN_REGEX.test(text)) {
+    return;
+  }
+
+  const convertedFragment = buildConvertedFragment(text, usdRate, false);
+  const usdLine = convertedFragment?.querySelector(`.${USD_LINE_CLASS}`);
+  if (!usdLine) {
+    return;
+  }
+
+  avByProcessedPriceBlocks.add(block);
+  markTextNodesProcessed(block);
+  block.appendChild(usdLine);
+}
+
+function processAvByPriceBlocks(root, usdRate) {
+  if (!isAvBySite()) {
+    return;
+  }
+
+  for (const block of root.querySelectorAll(AV_BY_PRICE_BLOCK_SELECTOR)) {
+    processAvByPriceBlock(block, usdRate);
+  }
+}
+
 function isKufarMainPriceContext(element) {
   if (!element) {
     return false;
@@ -127,6 +184,10 @@ function isPriceLikeContext(element) {
 
   if (isKufarRealtySite()) {
     return isKufarMainPriceContext(element);
+  }
+
+  if (isAvBySite() && getAvByPriceBlock(element)) {
+    return true;
   }
 
   const signature = `${element.className ?? ""} ${element.id ?? ""}`.toLowerCase();
@@ -230,6 +291,13 @@ function processTextNode(node, usdRate) {
     return;
   }
 
+  const avByPriceBlock = getAvByPriceBlock(parent);
+  if (avByPriceBlock) {
+    processAvByPriceBlock(avByPriceBlock, usdRate);
+    processedNodes.add(node);
+    return;
+  }
+
   if (
     node.nextSibling instanceof HTMLElement &&
     node.nextSibling.classList.contains(USD_LINE_CLASS)
@@ -287,6 +355,8 @@ function processTextNode(node, usdRate) {
 }
 
 function walkAndConvert(root, usdRate) {
+  processAvByPriceBlocks(root, usdRate);
+
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes = [];
   let current = walker.nextNode();
