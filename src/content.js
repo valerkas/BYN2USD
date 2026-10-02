@@ -57,8 +57,13 @@ function ensureUsdLineStyle() {
   style.id = "byn-usd-converted-style";
   const kufarInlinePrice = isKufarRealtySite()
     ? `
+    [class*="price__byr"] .${USD_LINE_CLASS},
     [class*="styles_price__byr"] .${USD_LINE_CLASS},
+    [class*="adview_mobile_price"] .${USD_LINE_CLASS},
+    [class*="adview_desktop_price"] .${USD_LINE_CLASS},
+    [class*="price--main"] .${USD_LINE_CLASS},
     [class*="styles_price__map"] .${USD_LINE_CLASS},
+    p[class*="__price"] .${USD_LINE_CLASS},
     p[class*="styles_price__"] .${USD_LINE_CLASS} {
       display: inline;
       margin-left: 6px;
@@ -137,43 +142,77 @@ function processAvByPriceBlocks(root, usdRate) {
   }
 }
 
+function isKufarMeterPrice(element) {
+  return Boolean(
+    element?.closest(
+      '[class*="price__meter"], [class*="styles_price__meter"]'
+    )
+  );
+}
+
+function isKufarByrPrice(element) {
+  return Boolean(
+    element?.closest(
+      '[class*="price__byr"], [class*="styles_price__byr"], [data-testid="card-price"]'
+    )
+  );
+}
+
 function isKufarMainPriceContext(element) {
-  if (!element) {
+  if (!element || isKufarMeterPrice(element)) {
     return false;
   }
 
-  if (element.closest('[class*="styles_price__meter"]')) {
-    return false;
-  }
-
-  if (element.closest('[class*="styles_price__byr"]')) {
+  // Listing cards and map cards: total price in BYR.
+  if (isKufarByrPrice(element)) {
     return true;
   }
 
-  const priceBlock = element.closest('[class*="styles_price__"]');
-  if (!priceBlock) {
+  // Ad detail: sticky footer + desktop/mobile price widgets.
+  if (
+    element.closest(
+      '[class*="price--main"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]'
+    )
+  ) {
+    return true;
+  }
+
+  const priceBlock = element.closest(
+    '[class*="__price"], [class*="styles_price__"]'
+  );
+  if (!priceBlock || isKufarMeterPrice(priceBlock)) {
     return false;
   }
 
   const blockClass = String(priceBlock.className);
-  if (/styles_price__meter/i.test(blockClass)) {
+  if (/price__meter|styles_price__meter/i.test(blockClass)) {
     return false;
   }
 
-  if (/styles_price__map/i.test(blockClass)) {
-    return Boolean(element.closest('[class*="styles_price__byr"]'));
+  if (/price__map|styles_price__map/i.test(blockClass)) {
+    return isKufarByrPrice(element);
   }
 
-  return priceBlock.matches('p[class*="styles_price__"]');
+  // Similar ads and other listing price paragraphs/containers.
+  return (
+    priceBlock.matches(
+      'p[class*="__price"], p[class*="styles_price__"], [class*="__main"]'
+    ) || Boolean(element.closest('[class*="__main"]'))
+  );
 }
 
 function getKufarConversionGroup(element) {
   return (
     element.closest('[data-testid*="realty-card"]') ||
-    element.closest('[class*="styles_price__map"]') ||
-    element.closest('[class*="styles_header__gFtKk"]') ||
+    element.closest(
+      '[class*="adview_mobile_price"], [class*="adview_desktop_price"]'
+    ) ||
+    element.closest('[class*="price--main"]')?.parentElement ||
+    element.closest('[class*="styles_price__map"], [class*="price__map"]') ||
     element.closest('a[href*="/vi/"]') ||
-    element.closest('[class*="styles_wrapper__adview"]')
+    element.closest(
+      '[class*="wrapper__adview"], [class*="adview_wrapper"], [class*="styles_wrapper__adview"]'
+    )
   );
 }
 
