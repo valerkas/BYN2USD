@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "BYN2USD (av.by,kufar.by)",
+  "name": "BYN2USD (av.by и kufar.by)",
   "version": "1.0.11",
   "description": "Показывает эквивалент цен в USD по курсу НБРБ рядом с ценами в BYN на av.by и re.kufar.by.",
   "permissions": [
