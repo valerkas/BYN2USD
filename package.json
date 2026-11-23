@@ -1,11 +1,13 @@
 {
   "name": "byn2usd",
   "private": true,
-  "description": "Chrome extension tooling (production smoke only)",
+  "description": "Chrome extension tooling (tests only)",
   "scripts": {
-    "test:production": "node scripts/production-smoke.mjs"
+    "test": "playwright test",
+    "test:unit": "playwright test --project=unit",
+    "test:production": "playwright test --project=production"
   },
   "devDependencies": {
-    "playwright": "^1.55.0"
+    "@playwright/test": "^1.65.1"
   }
 }

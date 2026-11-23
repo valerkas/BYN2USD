@@ -26,9 +26,19 @@ jobs:
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
 
-      - name: Run production smoke
-        id: smoke
+      - name: Unit tests (offline fixtures)
+        run: npm run test:unit
+
+      - name: Production tests (live sites with the packaged extension)
         run: npm run test:production
+
+      - name: Upload test results
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: test-results/
+          retention-days: 14
 
       - name: Email on failure
         if: failure()
@@ -43,10 +53,10 @@ jobs:
           to: valerkas@gmail.com
           from: BYN2USD Alerts <valerkas@gmail.com>
           body: |
-            Weekly BYN2USD production smoke failed.
+            Weekly BYN2USD tests failed.
 
             Repo: ${{ github.repository }}
             Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-            Branch: ${{ github.ref_name }}
 
-            Open the Actions log for the per-case report (TC-NBRB, TC-AV-*, TC-KF-*).
+            The "test-results" artifact contains report.json, traces, screenshots
+            and markup-diagnostics.json (current price CSS classes) for each failed test.

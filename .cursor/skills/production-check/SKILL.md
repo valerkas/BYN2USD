@@ -1,108 +1,79 @@
 ---
 name: production-check
 description: >-
-  Run BYN2USD production smoke checks against live НБРБ API, av.by, and
-  re.kufar.by. Use when the user asks to check production, smoke-test live
-  sites, verify selectors still match, regression-check after a site redesign,
-  or run tests/production-smoke.md.
+  Run the BYN2USD automated test suite (offline unit tests + live production
+  tests against НБРБ API, av.by and re.kufar.by with the packaged extension
+  loaded), triage failures, and fix markup drift. Use when the user or a
+  scheduled automation asks to check production, run weekly tests, smoke-test
+  live sites, verify selectors after a site redesign, or "проверь прод".
 ---
 
 # Production check (BYN2USD)
 
-## Goal
+Designed to run unattended (e.g. weekly). Everything goes through `npm`; the
+browser tools are only for diagnosing failures.
 
-Verify that live dependencies the extension relies on still work. Follow
-`tests/production-smoke.md` exactly. Do **not** expect the extension content
-script to be injected in Cursor’s browser — check APIs + DOM hooks only.
+## 1. Setup (once per environment)
 
-## Workflow
+```bash
+npm ci
+npx playwright install chromium   # add --with-deps on Linux CI
+```
 
-1. Read `tests/production-smoke.md` for case IDs and pass criteria.
-2. Run cases in this order: **TC-NBRB → TC-AV-LIST → TC-AV-DETAIL → TC-KF-LIST → TC-KF-DETAIL → TC-KF-METER**.
-3. Prefer browser tools for site pages; for НБРБ use HTTP fetch (shell `curl` or fetch) first.
-4. On CAPTCHA / empty app shell / login wall: retry once with another URL of the same site family, then mark FAIL with the blocker.
-5. End with the report template from `tests/production-smoke.md` (PASS/FAIL per case + Overall).
+## 2. Run
 
-## Seed URLs
+```bash
+npm run test:unit         # offline: fixtures in tests/fixtures, ~10 s
+npm run test:production   # live sites, extension loaded from the package file set
+```
 
-| Case | URL |
-|------|-----|
-| TC-NBRB | `https://www.nbrb.by/api/exrates/rates/USD?parammode=2` (fallbacks in the test file) |
-| TC-AV-LIST | `https://cars.av.by/filter` |
-| TC-KF-LIST | `https://re.kufar.by/l/minsk/kupit/kvartiru` |
+Run unit first. If unit fails, the code is broken — stop and fix that before
+looking at production.
 
-Detail cases: open the first real ad link from the listing page.
+Results: console + `test-results/report.json`. Each failed production test
+has `markup-diagnostics.json` attached (URL, current price CSS classes, HTML
+snippet around the first BYN price).
 
-## Selector reference (must stay in sync with `src/content.js`)
+## 3. Triage a production failure
 
-**av.by price blocks**
+Classify each failed test before touching code:
+
+| Symptom in report / diagnostics | Cause | Action |
+|---|---|---|
+| `NBRB rate unavailable`, service-worker test fails | НБРБ API down or changed | Retry once later; if JSON shape changed, fix `src/background.js` |
+| `title` is a CAPTCHA / access denied / empty, `priceClasses` empty | Site blocked the runner | Not a code bug. Report as BLOCKED, rerun later |
+| Prices visible, `usdLines: 0`, new class names in `priceClasses` | **Markup drift** | Fix selectors (step 4) |
+| `implied rate … vs NBRB` | Wrong amount parsed (e.g. m² price, split nodes) | Fix parsing in `src/content.js`, add fixture case |
+| `malformed USD line` | Formatting regression | Fix `formatUsd` / regexes |
+
+When diagnostics are not enough, open the failing URL with the browser tools
+and inspect the DOM around the price.
+
+## 4. Fix markup drift
+
+1. Update the selectors in `src/content.js` (`AV_BY_PRICE_BLOCK_SELECTOR`,
+   `isKufarMainPriceContext`, `getKufarConversionGroup`, inline CSS in
+   `ensureUsdLineStyle`). Keep old selectors — Kufar A/B-tests layouts.
+2. Add a fixture in `tests/fixtures/` copying the new markup (strip it to the
+   price block + a few neighbours that must NOT be converted), and a test in
+   `tests/unit/` asserting the expected `~$` text.
+3. Keep the selector constants at the top of `tests/production/live.spec.mjs`
+   in sync.
+4. `npm run test:unit`, then `npm run test:production` — both must pass.
+
+Do not bump the version, build the zip, commit or push unless the run
+instructions explicitly ask for it.
+
+## 5. Report
+
+End with exactly this block:
 
 ```text
-.listing-item__price-primary, .listing-top__price-primary, [class*='__price-primary']
+BYN2USD weekly check — <YYYY-MM-DD>
+Unit:        PASS | FAIL (<n> failed)
+NBRB:        PASS | FAIL — rate=<value>
+av.by:       PASS | FAIL | BLOCKED — <short note>
+re.kufar.by: PASS | FAIL | BLOCKED — <short note>
+Fix:         none | <files changed, one line>
+Overall:     PASS | FAIL | BLOCKED
 ```
-
-**Kufar BYR / card**
-
-```text
-[class*="price__byr"], [class*="styles_price__byr"], [data-testid="card-price"]
-```
-
-**Kufar main (ad)**
-
-```text
-[class*="price--main"], [class*="adview_price"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]
-```
-
-**Kufar meter (must stay distinct)**
-
-```text
-[class*="price__meter"], [class*="styles_price__meter"]
-```
-
-**Currency tokens:** `р.`, `руб`, `BYN`, `бел. руб` (case-insensitive).
-
-## Browser probe (preferred)
-
-After navigating and waiting for listings/ad content, evaluate DOM counts, e.g.:
-
-```js
-(() => {
-  const av = document.querySelectorAll(
-    ".listing-item__price-primary, .listing-top__price-primary, [class*='__price-primary']"
-  );
-  const byr = document.querySelectorAll(
-    '[class*="price__byr"], [class*="styles_price__byr"], [data-testid="card-price"]'
-  );
-  const meter = document.querySelectorAll(
-    '[class*="price__meter"], [class*="styles_price__meter"]'
-  );
-  const main = document.querySelectorAll(
-    '[class*="price--main"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]'
-  );
-  const sample = (nodes) =>
-    [...nodes].slice(0, 3).map((el) =>
-      (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 80)
-    );
-  return {
-    avCount: av.length,
-    byrCount: byr.length,
-    meterCount: meter.length,
-    mainCount: main.length,
-    avSample: sample(av),
-    byrSample: sample(byr),
-    mainSample: sample(main)
-  };
-})()
-```
-
-## On failure
-
-If selectors miss but prices are still visible:
-
-1. Capture short class names / HTML around the price (≤300 chars).
-2. Mark the case FAIL with “markup drift”.
-3. Suggest concrete selector updates for `src/content.js` — do not change code unless the user asks.
-
-## Output
-
-Use only the report template from `tests/production-smoke.md`. Keep the chat summary to that report plus any drift notes.

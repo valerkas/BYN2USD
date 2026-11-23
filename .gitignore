@@ -4,3 +4,5 @@ package-lock.json.bak
 .DS_Store
 Thumbs.db
 BYN2USD-*.zip
+test-results/
+playwright-report/
