@@ -1,0 +1,11 @@
+{
+  "name": "byn2usd",
+  "private": true,
+  "description": "Chrome extension tooling (production smoke only)",
+  "scripts": {
+    "test:production": "node scripts/production-smoke.mjs"
+  },
+  "devDependencies": {
+    "playwright": "^1.55.0"
+  }
+}

@@ -59,6 +59,7 @@ function ensureUsdLineStyle() {
     ? `
     [class*="price__byr"] .${USD_LINE_CLASS},
     [class*="styles_price__byr"] .${USD_LINE_CLASS},
+    [class*="adview_price"] .${USD_LINE_CLASS},
     [class*="adview_mobile_price"] .${USD_LINE_CLASS},
     [class*="adview_desktop_price"] .${USD_LINE_CLASS},
     [class*="price--main"] .${USD_LINE_CLASS},
@@ -168,17 +169,27 @@ function isKufarMainPriceContext(element) {
     return true;
   }
 
-  // Ad detail: sticky footer + desktop/mobile price widgets.
+  // Ad detail: sticky footer + desktop/mobile/current price widgets.
+  // Kufar CSS modules drifted from adview_mobile_price/adview_desktop_price
+  // to hashed classes like Lx8Aaa_adview_price + UrP3Wq_main.
   if (
     element.closest(
-      '[class*="price--main"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]'
+      '[class*="price--main"], [class*="adview_price"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]'
     )
   ) {
     return true;
   }
 
+  // Price text span on ad pages: UrP3Wq_main (single underscore, not __main).
+  if (
+    element.matches('[class*="_main"]') &&
+    element.closest('[class*="price"], [class*="adview"]')
+  ) {
+    return true;
+  }
+
   const priceBlock = element.closest(
-    '[class*="__price"], [class*="styles_price__"]'
+    '[class*="__price"], [class*="styles_price__"], [class*="adview_price"], [class$="_price"]'
   );
   if (!priceBlock || isKufarMeterPrice(priceBlock)) {
     return false;
@@ -196,8 +207,8 @@ function isKufarMainPriceContext(element) {
   // Similar ads and other listing price paragraphs/containers.
   return (
     priceBlock.matches(
-      'p[class*="__price"], p[class*="styles_price__"], [class*="__main"]'
-    ) || Boolean(element.closest('[class*="__main"]'))
+      'p[class*="__price"], p[class*="styles_price__"], [class*="__main"], [class*="_main"], [class$="_price"], [class*="adview_price"]'
+    ) || Boolean(element.closest('[class*="__main"], [class*="_main"]'))
   );
 }
 
@@ -205,7 +216,7 @@ function getKufarConversionGroup(element) {
   return (
     element.closest('[data-testid*="realty-card"]') ||
     element.closest(
-      '[class*="adview_mobile_price"], [class*="adview_desktop_price"]'
+      '[class*="adview_price"], [class*="adview_mobile_price"], [class*="adview_desktop_price"]'
     ) ||
     element.closest('[class*="price--main"]')?.parentElement ||
     element.closest('[class*="styles_price__map"], [class*="price__map"]') ||

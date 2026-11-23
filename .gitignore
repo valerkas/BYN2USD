@@ -1,0 +1,6 @@
+node_modules/
+package-lock.json.bak
+*.log
+.DS_Store
+Thumbs.db
+BYN2USD-*.zip
