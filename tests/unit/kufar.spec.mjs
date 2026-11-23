@@ -35,7 +35,7 @@ test.describe("re.kufar.by — ad page (current markup)", () => {
   test("USD line is rendered inline next to the price", async ({ page }) => {
     const display = await page
       .locator(`[data-test="ad-price"] ${USD_LINE}`)
-      .evaluate((el) => getComputedStyle(el).display);
+      .evaluate((el) => getComputedStyle(el).display, null, { timeout: 5_000 });
     expect(display).toBe("inline");
   });
 });

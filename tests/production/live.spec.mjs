@@ -2,6 +2,7 @@
  * Live production checks: loads the packaged extension into Chromium and
  * verifies USD lines on real av.by / re.kufar.by pages. Requires internet.
  */
+import { writeFile } from "node:fs/promises";
 import { test, expect } from "../helpers/extension-fixture.mjs";
 
 const USD_LINE = ".byn-usd-converted-line";
@@ -53,10 +54,9 @@ async function attachDiagnostics(page, testInfo) {
       };
     })
     .catch((error) => ({ error: String(error) }));
-  await testInfo.attach("markup-diagnostics.json", {
-    body: JSON.stringify(diagnostics, null, 2),
-    contentType: "application/json",
-  });
+  const file = testInfo.outputPath("markup-diagnostics.json");
+  await writeFile(file, JSON.stringify(diagnostics, null, 2), "utf8");
+  await testInfo.attach("markup-diagnostics.json", { path: file, contentType: "application/json" });
 }
 
 test.afterEach(async ({ page }, testInfo) => {
@@ -166,7 +166,36 @@ test.describe("re.kufar.by", () => {
     expect(adUrl, "no ad link on listing").toBeTruthy();
 
     await page.goto(adUrl, { waitUntil: "domcontentloaded" });
-    await expect(page.locator(`:is(${KF_AD_PRICE}) ${USD_LINE}`).first()).toBeVisible({ timeout: 30_000 });
+
+    // Located by text, not by class, so a Kufar class rename cannot hide a missing USD line.
+    await expect
+      .poll(() => readTopmostBynPrice(page), {
+        message: "first visible BYN price on the ad page has no ~$ line",
+        timeout: 30_000,
+      })
+      .toMatchObject({ hasUsd: true });
+
     expectRateConsistent(await readConversions(page, KF_AD_PRICE));
   });
 });
+
+async function readTopmostBynPrice(page) {
+  return page.evaluate((usdLine) => {
+    const priceOnly = /^\s*\d{1,3}(?:[\s\u00A0\u202F]\d{3})*\s*р\.\s*$/;
+    for (const el of document.querySelectorAll("body *")) {
+      const ownText = [...el.childNodes]
+        .filter((n) => n.nodeType === Node.TEXT_NODE)
+        .map((n) => n.textContent)
+        .join("");
+      if (!priceOnly.test(ownText)) continue;
+      const rect = el.getBoundingClientRect();
+      if (!rect.width || !rect.height) continue;
+      return {
+        text: ownText.trim(),
+        className: String(el.className),
+        hasUsd: Boolean(el.querySelector(usdLine) || el.parentElement?.querySelector(`:scope > ${usdLine}`)),
+      };
+    }
+    return null;
+  }, USD_LINE);
+}

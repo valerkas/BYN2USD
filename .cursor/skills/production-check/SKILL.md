@@ -31,8 +31,9 @@ Run unit first. If unit fails, the code is broken — stop and fix that before
 looking at production.
 
 Results: console + `test-results/report.json`. Each failed production test
-has `markup-diagnostics.json` attached (URL, current price CSS classes, HTML
-snippet around the first BYN price).
+writes `test-results/<test-name>/markup-diagnostics.json` (URL, page title,
+number of `~$` lines, current price CSS classes, HTML around the first BYN
+price) next to its screenshot and trace.
 
 ## 3. Triage a production failure
 
