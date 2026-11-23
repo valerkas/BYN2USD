@@ -1,4 +1,6 @@
 # BYN to USD Chrome Extension
+# публикация
+https://chrome.google.com/u/1/webstore/devconsole/4b38568b-3ddd-4385-8069-f42fb2079e5b/cibbmokbaeaojnpijhckhobhlaliabil/edit/package
 
 Расширение для Chrome, которое находит на странице цены в рублях (BYN) и показывает рядом эквивалент в долларах США по курсу НБРБ.
 
